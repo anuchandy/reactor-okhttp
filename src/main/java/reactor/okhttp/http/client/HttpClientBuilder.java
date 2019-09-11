@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * Builder to configure and build an implementation Reactor OkHttp Client.
@@ -28,6 +29,7 @@ public class HttpClientBuilder {
     private Dispatcher dispatcher;
     private java.net.Proxy proxy;
     private Authenticator proxyAuthenticator;
+    private List<Consumer<OkHttpClient.Builder>> configurationSetters = new ArrayList<>();
 
     /**
      * Creates HttpClientBuilder.
@@ -48,11 +50,11 @@ public class HttpClientBuilder {
     /**
      * Add a network layer interceptor to Http request pipeline.
      *
-     * @param networkInterceptor the interceptor to add
+     * @param networkInterceptor the network interceptor to add
      * @return the updated HttpClientBuilder object
      */
     public HttpClientBuilder addNetworkInterceptor(Interceptor networkInterceptor) {
-        Objects.requireNonNull(networkInterceptor);
+        Objects.requireNonNull(networkInterceptor, "networkInterceptor cannot be null.");
         this.networkInterceptors.add(networkInterceptor);
         return this;
     }
@@ -60,9 +62,9 @@ public class HttpClientBuilder {
     /**
      * Add network layer interceptors to Http request pipeline.
      *
-     * This replaces all previously-set interceptors.
+     * This replaces all previously-set network interceptors.
      *
-     * @param networkInterceptors the interceptors to add
+     * @param networkInterceptors the network interceptors to set
      * @return the updated HttpClientBuilder object
      */
     public HttpClientBuilder setNetworkInterceptors(List<Interceptor> networkInterceptors) {
@@ -70,9 +72,28 @@ public class HttpClientBuilder {
         return this;
     }
 
+    /**
+     * Add a http layer interceptor to Http request pipeline.
+     *
+     * @param httpInterceptor the http interceptor to add
+     * @return the updated HttpClientBuilder object
+     */
+    public HttpClientBuilder addHttpInterceptor(Interceptor httpInterceptor) {
+        Objects.requireNonNull(httpInterceptor, "httpInterceptor cannot be null.");
+        this.httpInterceptors.add(httpInterceptor);
+        return this;
+    }
 
-    public HttpClientBuilder addHttpInterceptor(HttpInterceptor httpInterceptor) {
-        this.httpInterceptors.add(new HttpInterceptorWrapper(httpInterceptor));
+    /**
+     * Add http layer httpInterceptors to Http request pipeline.
+     *
+     * This replaces all previously-set http Interceptors.
+     *
+     * @param httpInterceptors the http interceptors to set
+     * @return the updated HttpClientBuilder object
+     */
+    public HttpClientBuilder setHttpInterceptors(List<Interceptor> httpInterceptors) {
+        this.httpInterceptors = Objects.requireNonNull(httpInterceptors, "httpInterceptors cannot be null.");
         return this;
     }
 
@@ -153,6 +174,38 @@ public class HttpClientBuilder {
     }
 
     /**
+     * Register a configuration setter.
+     *
+     * The configuration setters will be invoked with {@link okhttp3.OkHttpClient.Builder} when {@link this#build()}
+     * gets called, the setter can set any arbitrary configuration on the builder.
+     *
+     * @param configurationSetter the configuration setter
+     * @return the updated HttpClientBuilder object
+     */
+    public HttpClientBuilder setConfiguration(Consumer<OkHttpClient.Builder> configurationSetter) {
+        Objects.requireNonNull(configurationSetter, "configurationSetter cannot be null.");
+        this.configurationSetters.add(configurationSetter);
+        return this;
+    }
+
+    /**
+     * Register a list of configuration setter.
+     *
+     * The configuration setters will be invoked with the okHttp client builder when {@link this#build()}
+     * gets called, the setter can set any arbitrary configuration on the builder.
+     *
+     * This replaces all previously-set configuration setters.
+     *
+     * @param configurationSetters the configuration setters
+     * @return the updated HttpClientBuilder object
+     */
+    public HttpClientBuilder setConfiguration(List<Consumer<OkHttpClient.Builder>> configurationSetters) {
+        Objects.requireNonNull(configurationSetters, "configurationSetters cannot be null.");
+        this.configurationSetters = configurationSetters;
+        return this;
+    }
+
+    /**
      * Build a HttpClient with current configurations.
      *
      * @return a {@link HttpClient}.
@@ -161,15 +214,15 @@ public class HttpClientBuilder {
         OkHttpClient.Builder httpClientBuilder = this.okHttpClient == null
                 ? new OkHttpClient.Builder()
                 : this.okHttpClient.newBuilder();
-        //
+
         for (Interceptor interceptor : this.networkInterceptors) {
             httpClientBuilder = httpClientBuilder.addNetworkInterceptor(interceptor);
         }
-        //
+
         for (Interceptor interceptor : this.httpInterceptors) {
             httpClientBuilder = httpClientBuilder.addInterceptor(interceptor);
         }
-        //
+
         if (this.readTimeout != null) {
             httpClientBuilder = httpClientBuilder.readTimeout(this.readTimeout);
         } else {
@@ -190,7 +243,9 @@ public class HttpClientBuilder {
         if (this.proxyAuthenticator != null) {
             httpClientBuilder = httpClientBuilder.authenticator(this.proxyAuthenticator);
         }
-        return null;
-        // return new HttpClient(httpClientBuilder.build());
+        for (Consumer<OkHttpClient.Builder> configurationSetter : this.configurationSetters) {
+            configurationSetter.accept(httpClientBuilder);
+        }
+        return new HttpClient(httpClientBuilder.build());
     }
 }
