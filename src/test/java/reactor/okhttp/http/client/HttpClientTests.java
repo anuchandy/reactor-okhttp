@@ -2,7 +2,6 @@ package reactor.okhttp.http.client;
 
 import okhttp3.Call;
 import okhttp3.Request;
-import okhttp3.Response;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import org.junit.Assert;
@@ -15,6 +14,7 @@ import reactor.test.StepVerifierOptions;
 
 import java.io.IOException;
 import java.net.ConnectException;
+import java.util.ArrayList;
 import java.util.List;
 
 public class HttpClientTests {
@@ -32,20 +32,6 @@ public class HttpClientTests {
 
         HttpClient client = new HttpClientBuilder()
                 .build();
-
-        client = client.registerInterceptor((request, next) -> {
-            System.out.println("Interceptor1::request");
-            return next.intercept(request).map(response -> {
-                System.out.println("Interceptor1::response");
-                return response;
-            });
-        }).registerInterceptor((request, nextInterceptor) -> {
-            System.out.println("Interceptor2::request");
-            return nextInterceptor.intercept(request).map(response -> {
-                System.out.println("Interceptor2::response");
-                return response;
-            });
-        });
 
         Request request = new Request.Builder()
                 .url(endpointFor(server))
@@ -148,8 +134,48 @@ public class HttpClientTests {
         Assert.assertFalse(disposable.isDisposed());
     }
 
+    @Test
+    public void canIntercept() {
+        server.enqueue(new MockResponse());
+        List<String> interceptCallOrder = new ArrayList<>();
+        //
+        HttpClient client = new HttpClientBuilder()
+                .addInterceptor((request, nextInterceptor) -> {
+                    interceptCallOrder.add("1_processing_request");
+                    return nextInterceptor.intercept(request)
+                            .map(response -> {
+                                interceptCallOrder.add("1_processing_response");
+                                return response;
+                            });
+                })
+                .addInterceptor((request, nextInterceptor) -> {
+                    interceptCallOrder.add("2_processing_request");
+                    return nextInterceptor.intercept(request)
+                            .map(response -> {
+                                interceptCallOrder.add("2_processing_response");
+                                return response;
+                            });
+                })
+                .build();
+
+        Request request = new Request.Builder()
+                .url(endpointFor(server))
+                .get()
+                .build();
+
+        StepVerifier.create(client.send(request))
+                .thenRequest(1)
+                .assertNext(r -> Assert.assertNotNull(r))
+                .verifyComplete();
+
+        Assert.assertEquals(4, interceptCallOrder.size());
+        Assert.assertEquals("1_processing_request", interceptCallOrder.get(0));
+        Assert.assertEquals("2_processing_request", interceptCallOrder.get(1));
+        Assert.assertEquals("2_processing_response", interceptCallOrder.get(2));
+        Assert.assertEquals("1_processing_response", interceptCallOrder.get(3));
+    }
+
     private static String endpointFor(MockWebServer server) {
-        reactor.netty.http.client.HttpClient client = reactor.netty.http.client.HttpClient.create();
         return String.format("http://%s:%s", server.getHostName(), server.getPort());
     }
 }
