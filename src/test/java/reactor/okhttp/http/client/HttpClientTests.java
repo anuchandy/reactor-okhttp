@@ -2,6 +2,7 @@ package reactor.okhttp.http.client;
 
 import okhttp3.Call;
 import okhttp3.Request;
+import okhttp3.Response;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import org.junit.Assert;
@@ -31,6 +32,20 @@ public class HttpClientTests {
 
         HttpClient client = new HttpClientBuilder()
                 .build();
+
+        client = client.registerInterceptor((request, next) -> {
+            System.out.println("Interceptor1::request");
+            return next.intercept(request).map(response -> {
+                System.out.println("Interceptor1::response");
+                return response;
+            });
+        }).registerInterceptor((request, nextInterceptor) -> {
+            System.out.println("Interceptor2::request");
+            return nextInterceptor.intercept(request).map(response -> {
+                System.out.println("Interceptor2::response");
+                return response;
+            });
+        });
 
         Request request = new Request.Builder()
                 .url(endpointFor(server))
@@ -69,10 +84,10 @@ public class HttpClientTests {
         stepVerifierOptions.initialRequest(0);
 
         StepVerifier.create(client.send(request), stepVerifierOptions)
-                .expectNextCount(0) // send() does not send without request
+                .expectNextCount(0) // intercept() does not intercept without request
                 .thenRequest(1)
                 .expectNextCount(1)
-                .thenRequest(1)// send() returns mono hence only the first request matter
+                .thenRequest(1)// intercept() returns mono hence only the first request matter
                 .expectNextCount(0)
                 .verifyComplete();
     }
