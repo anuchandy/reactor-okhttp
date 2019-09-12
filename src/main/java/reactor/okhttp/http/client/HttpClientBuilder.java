@@ -8,7 +8,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * Builder to configure and build an implementation Reactor OkHttp Client.
+ * Builder to configure and build {@link HttpClient}.
  */
 public class HttpClientBuilder {
     private final okhttp3.OkHttpClient okHttpClient;
@@ -23,9 +23,9 @@ public class HttpClientBuilder {
     }
 
     /**
-     * Creates HttpClientBuilder from the builder of an existing OkHttpClient.
+     * Creates HttpClientBuilder from the builder of an existing {@link okhttp3.OkHttpClient}.
      *
-     * @param okHttpClient the httpclient
+     * @param okHttpClient the OkHttp client
      */
     public HttpClientBuilder(OkHttpClient okHttpClient) {
         this.okHttpClient = Objects.requireNonNull(okHttpClient, "okHttpClient cannot be null.");
@@ -34,14 +34,14 @@ public class HttpClientBuilder {
     /**
      * Register a configuration setter.
      *
-     * The configuration setters will be invoked with {@link okhttp3.OkHttpClient.Builder}
+     * The configuration setter will be invoked with {@link okhttp3.OkHttpClient.Builder}
      * when {@link this#build()} is called, the setter can set arbitrary configuration
      * on the builder.
      *
      * @param configurationSetter the configuration setter
      * @return the updated HttpClientBuilder object
      */
-    public HttpClientBuilder setConfiguration(Consumer<OkHttpClient.Builder> configurationSetter) {
+    public HttpClientBuilder addConfiguration(Consumer<OkHttpClient.Builder> configurationSetter) {
         Objects.requireNonNull(configurationSetter, "configurationSetter cannot be null.");
         this.configurationSetters.add(configurationSetter);
         return this;
@@ -51,7 +51,7 @@ public class HttpClientBuilder {
      * Register a list of configuration setter.
      *
      * The configuration setters will be invoked with the {@link okhttp3.OkHttpClient.Builder}
-     * when {@link this#build()} is called, the setter can set arbitrary configuration
+     * when {@link this#build()} is called, the setters can set arbitrary configurations
      * on the builder.
      *
      * This replaces all previously-set configuration setters.
@@ -72,9 +72,7 @@ public class HttpClientBuilder {
      * @return the updated HttpClientBuilder object
      */
     public HttpClientBuilder setReadTimeout(Duration readTimeout) {
-        this.setConfiguration(builder -> {
-            builder.readTimeout(readTimeout);
-        });
+        this.addConfiguration(builder -> builder.readTimeout(readTimeout));
         return this;
     }
 
@@ -85,9 +83,7 @@ public class HttpClientBuilder {
      * @return the updated HttpClientBuilder object
      */
     public HttpClientBuilder setConnectionTimeout(Duration connectionTimeout) {
-        this.setConfiguration(builder -> {
-            builder.readTimeout(connectionTimeout);
-        });
+        this.addConfiguration(builder -> builder.readTimeout(connectionTimeout));
         return this;
     }
 
@@ -98,9 +94,7 @@ public class HttpClientBuilder {
      * @return the updated HttpClientBuilder object
      */
     public HttpClientBuilder setProxy(java.net.Proxy proxy) {
-        this.setConfiguration(builder -> {
-            builder.proxy(proxy);
-        });
+        this.addConfiguration(builder -> builder.proxy(proxy));
         return this;
     }
 
@@ -117,7 +111,7 @@ public class HttpClientBuilder {
     }
 
     /**
-     * Add interceptors those observe the full span of each HTTP call.
+     * Add interceptors those observes the full span of each HTTP call.
      *
      * This replaces all previously-set interceptors.
      *

@@ -1,7 +1,6 @@
 package reactor.okhttp.http.client;
 
 import okhttp3.Call;
-import okhttp3.Request;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import org.junit.Assert;
@@ -12,8 +11,9 @@ import reactor.core.Exceptions;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifierOptions;
 
-import java.io.IOException;
 import java.net.ConnectException;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,23 +33,18 @@ public class HttpClientTests {
         HttpClient client = new HttpClientBuilder()
                 .build();
 
-        Request request = new Request.Builder()
-                .url(endpointFor(server))
-                .get()
-                .build();
+        HttpRequest request = new HttpRequest(HttpMethod.POST, endpointFor(server));
+        request.setHeader(hdrName, hdrVal);
+        request.setBody("hello");
 
         StepVerifier.create(client.send(request))
                 .thenRequest(1)
                 .assertNext(r -> {
                     Assert.assertNotNull(r);
-                    Assert.assertNotNull(r.headers());
-                    Assert.assertEquals(hdrVal, r.headers().get(hdrName));
-                    Assert.assertNull(r.headers().get("not-exists"));
-                    try {
-                        Assert.assertEquals(body, r.body().string());
-                    } catch (IOException ioe) {
-                        Exceptions.propagate(ioe);
-                    }
+                    Assert.assertNotNull(r.getHeaders());
+                    Assert.assertEquals(hdrVal, r.getHeaderValue(hdrName));
+                    Assert.assertNull(r.getHeaderValue("not-exists"));
+                    Assert.assertEquals(body, r.getBodyAsString().block());
                 })
                 .verifyComplete();
     }
@@ -61,10 +56,7 @@ public class HttpClientTests {
         HttpClient client = new HttpClientBuilder()
                 .build();
 
-        Request request = new Request.Builder()
-                .url(endpointFor(server))
-                .get()
-                .build();
+        HttpRequest request = new HttpRequest(HttpMethod.GET, endpointFor(server));
 
         StepVerifierOptions stepVerifierOptions = StepVerifierOptions.create();
         stepVerifierOptions.initialRequest(0);
@@ -85,10 +77,7 @@ public class HttpClientTests {
         HttpClient client = new HttpClientBuilder()
                 .build();
 
-        Request request = new Request.Builder()
-                .url(endpointFor(server))
-                .get()
-                .build();
+        HttpRequest request = new HttpRequest(HttpMethod.GET, endpointFor(server));
 
         StepVerifier.create(client.send(request))
                 .thenRequest(1)
@@ -102,10 +91,7 @@ public class HttpClientTests {
         HttpClient client = new HttpClientBuilder()
                 .build();
 
-        Request request = new Request.Builder()
-                .url(endpointFor(server))
-                .get()
-                .build();
+        HttpRequest request = new HttpRequest(HttpMethod.GET, endpointFor(server));
 
         Disposable disposable = client.send(request).subscribe();
         List<Call> calls = client.okHttpClient.dispatcher().runningCalls();
@@ -121,10 +107,7 @@ public class HttpClientTests {
         HttpClient client = new HttpClientBuilder()
                 .build();
 
-        Request request = new Request.Builder()
-                .url(endpointFor(server))
-                .get()
-                .build();
+        HttpRequest request = new HttpRequest(HttpMethod.GET, endpointFor(server));
 
         Disposable disposable = client.send(request).subscribe();
         List<Call> calls = client.okHttpClient.dispatcher().runningCalls();
@@ -158,10 +141,7 @@ public class HttpClientTests {
                 })
                 .build();
 
-        Request request = new Request.Builder()
-                .url(endpointFor(server))
-                .get()
-                .build();
+        HttpRequest request = new HttpRequest(HttpMethod.GET, endpointFor(server));
 
         StepVerifier.create(client.send(request))
                 .thenRequest(1)
@@ -175,7 +155,11 @@ public class HttpClientTests {
         Assert.assertEquals("1_processing_response", interceptCallOrder.get(3));
     }
 
-    private static String endpointFor(MockWebServer server) {
-        return String.format("http://%s:%s", server.getHostName(), server.getPort());
+    private static URL endpointFor(MockWebServer server) {
+        try {
+            return new URL(String.format("http://%s:%s", server.getHostName(), server.getPort()));
+        } catch (MalformedURLException me) {
+            throw  Exceptions.propagate(me);
+        }
     }
 }
