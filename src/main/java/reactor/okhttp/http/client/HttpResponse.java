@@ -1,6 +1,7 @@
 package reactor.okhttp.http.client;
 
 import okhttp3.Headers;
+import okhttp3.MediaType;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okio.Buffer;
@@ -13,6 +14,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.util.function.Function;
+
 import okio.BufferedSource;
 
 /**
@@ -23,6 +26,8 @@ public final class HttpResponse implements Closeable {
     private final int statusCode;
     private final HttpHeaders headers;
     private final Mono<ResponseBody> responseBodyMono;
+    private final boolean isBuffered;
+
     // using 4K as default buffer size: https://stackoverflow.com/a/237495/1473510
     private static final int BYTE_BUFFER_CHUNK_SIZE = 4096;
 
@@ -36,6 +41,7 @@ public final class HttpResponse implements Closeable {
         this.request = request;
         this.statusCode = innerResponse.code();
         this.headers = fromOkHttpHeaders(innerResponse.headers());
+        this.isBuffered = false;
         if (innerResponse.body() == null) {
             // innerResponse.body() getter will not return null for server returned responses.
             // It can be null:
@@ -65,6 +71,7 @@ public final class HttpResponse implements Closeable {
         this.request = request;
         this.statusCode = statusCode;
         this.headers = headers;
+        this.isBuffered = true;
         this.responseBodyMono = responseBodyMono.map(responseBody -> {
             BufferedSource bufferedSource = responseBody.source();
             try {
@@ -73,9 +80,10 @@ public final class HttpResponse implements Closeable {
                 throw Exceptions.propagate(ioe);
             }
             Buffer bufferedContent = bufferedSource.getBuffer();
-            return ResponseBody.create(bufferedContent.readByteArray(), responseBody.contentType());
+            return new BodyAndContentType(bufferedContent.readByteArray(), responseBody.contentType());
         })
-        .cache();
+        .cache()
+        .map(bc -> ResponseBody.create(bc.bytes(), bc.mediaType()));
     }
 
     /**
@@ -159,7 +167,11 @@ public final class HttpResponse implements Closeable {
      * @return the new Response object
      */
     public HttpResponse buffer() {
-        return new HttpResponse(this.responseBodyMono, this.statusCode, this.headers, this.request);
+        if (this.isBuffered) {
+            return this;
+        } else {
+            return new HttpResponse(this.responseBodyMono, this.statusCode, this.headers, this.request);
+        }
     }
 
     @Override
@@ -197,7 +209,8 @@ public final class HttpResponse implements Closeable {
                     try {
                         int numBytes = inputStream.read(buffer);
                         if (numBytes > 0) {
-                            return pair.buffer(ByteBuffer.wrap(buffer, 0, numBytes)).readBytes(numBytes);
+                            ByteBuffer byteBuffer = ByteBuffer.wrap(buffer, 0, numBytes);
+                            return pair.buffer(byteBuffer).readBytes(numBytes);
                         } else {
                             return pair.buffer(null).readBytes(numBytes);
                         }
@@ -230,6 +243,24 @@ public final class HttpResponse implements Closeable {
         Pair readBytes(int cnt) {
             this.readBytes = cnt;
             return this;
+        }
+    }
+
+    private static class BodyAndContentType {
+        private final byte[] bytes;
+        private final MediaType mediaType;
+
+        BodyAndContentType(byte[] bytes, MediaType mediaType) {
+            this.bytes = bytes;
+            this.mediaType = mediaType;
+        }
+
+        byte[] bytes() {
+            return this.bytes;
+        }
+
+        MediaType mediaType() {
+            return this.mediaType;
         }
     }
 }

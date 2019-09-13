@@ -8,12 +8,16 @@ import org.junit.Rule;
 import org.junit.Test;
 import reactor.core.Disposable;
 import reactor.core.Exceptions;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifierOptions;
 
+import java.io.IOException;
 import java.net.ConnectException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -153,6 +157,89 @@ public class HttpClientTests {
         Assert.assertEquals("2_processing_request", interceptCallOrder.get(1));
         Assert.assertEquals("2_processing_response", interceptCallOrder.get(2));
         Assert.assertEquals("1_processing_response", interceptCallOrder.get(3));
+    }
+
+    @Test
+    public void ensureBodyDisposedOnRead() {
+        server.enqueue(new MockResponse()
+                .setBody("hello"));
+
+        HttpClient client = new HttpClientBuilder()
+                .build();
+
+        HttpRequest request = new HttpRequest(HttpMethod.POST, endpointFor(server));
+        request.setBody("hello");
+
+        Mono<HttpResponse> responseMono = client.send(request);
+        HttpResponse response = responseMono.block();
+        String body = response.getBodyAsString().block();
+        Assert.assertEquals("hello", body);
+        //
+        try {
+            response.getBodyAsString().block();
+            Assert.fail("Expected RuntimeException would be thrown.");
+        } catch (RuntimeException ise) {
+            Assert.assertEquals("closed", ise.getMessage());
+        }
+    }
+
+    @Test
+    public void ensureBodyCanReadAsByteBuffer() {
+        server.enqueue(new MockResponse()
+                .setBody("hello"));
+
+        HttpClient client = new HttpClientBuilder()
+                .build();
+        HttpRequest request = new HttpRequest(HttpMethod.POST, endpointFor(server));
+        request.setBody("hello");
+
+        String[] data = new String[1];
+        Mono<HttpResponse> responseMono = client.send(request);
+        Flux<ByteBuffer> bodyFlux = responseMono.block().getBody();
+        //
+        bodyFlux.doOnNext(byteBuffer -> {
+            byte[] bytes = new byte[byteBuffer.remaining()];
+            byteBuffer.get(bytes, 0, bytes.length);
+            data[0] = new String(bytes);
+        }).blockLast();
+        Assert.assertNotNull(data[0]);
+        Assert.assertEquals("hello", data[0]);
+        //
+        // Trying to read body again should throw
+        try {
+            bodyFlux.blockLast();
+            Assert.fail("Expected RuntimeException would be thrown.");
+        } catch (RuntimeException re) {
+            Assert.assertTrue(re.getCause() instanceof IOException);
+        }
+    }
+
+    @Test
+    public void canBufferResponse() {
+        server.enqueue(new MockResponse()
+                .setBody("hello"));
+
+        HttpClient client = new HttpClientBuilder()
+                .build();
+        HttpRequest request = new HttpRequest(HttpMethod.POST, endpointFor(server));
+        request.setBody("hello");
+
+        String[] data = new String[1];
+        Mono<HttpResponse> responseMono = client.send(request);
+        HttpResponse response = responseMono.block().buffer();
+        Flux<ByteBuffer> bodyFlux = response.getBody();
+        // Read once
+        bodyFlux.doOnNext(byteBuffer -> {
+            byte[] bytes = new byte[byteBuffer.remaining()];
+            byteBuffer.get(bytes, 0, bytes.length);
+            data[0] = new String(bytes);
+        }).blockLast();
+        Assert.assertNotNull(data[0]);
+        Assert.assertEquals("hello", data[0]);
+        // Read again
+        String result = response.getBodyAsString().block();
+        Assert.assertNotNull(result);
+        Assert.assertEquals(result,  "hello");
     }
 
     private static URL endpointFor(MockWebServer server) {
